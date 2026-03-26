@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(source /root/.bashrc)",
+      "Read(//root/.claude/skills/gstack/**)",
+      "Bash(./setup)",
+      "Read(//root/.claude/**)",
+      "Bash(./setup --create-symlinks)",
+      "Bash(bash scripts/create-symlinks.sh)",
+      "Bash(chmod:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(docker compose:*)",
+      "Bash(DB_HOST=localhost DB_PORT=5432 DB_USER=servermind DB_PASSWORD=servermind_dev DB_NAME=servermind go run cmd/migrator/main.go 2>&1)"
+    ]
+  }
+}

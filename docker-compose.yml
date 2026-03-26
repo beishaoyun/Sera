@@ -1,0 +1,189 @@
+version: '3.8'
+
+services:
+  # PostgreSQL - 主数据库
+  postgres:
+    image: postgres:15-alpine
+    container_name: servermind-postgres
+    environment:
+      POSTGRES_USER: servermind
+      POSTGRES_PASSWORD: servermind_dev
+      POSTGRES_DB: servermind
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U servermind"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis - 缓存和会话存储
+  redis:
+    image: redis:7-alpine
+    container_name: servermind-redis
+    command: redis-server --requirepass servermind_dev
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Milvus - 向量数据库 (RAG 知识库)
+  milvus-standalone:
+    image: milvusdb/milvus:v2.3.0
+    container_name: servermind-milvus
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    depends_on:
+      - etcd
+      - minio
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    volumes:
+      - milvus_data:/var/lib/milvus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.5
+    container_name: servermind-etcd
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+    volumes:
+      - etcd_data:/etcd
+    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+
+  minio:
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    container_name: servermind-minio
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/minio_data
+    command: minio server /minio_data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # Neo4j - 图数据库 (知识图谱)
+  neo4j:
+    image: neo4j:5.12
+    container_name: servermind-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/servermind_dev
+      NEO4J_PLUGINS: '["apoc"]'
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+
+  # ClickHouse - 时序数据库 (日志分析)
+  clickhouse:
+    image: clickhouse/clickhouse-server:23.8
+    container_name: servermind-clickhouse
+    environment:
+      CLICKHOUSE_DB: servermind
+      CLICKHOUSE_USER: servermind
+      CLICKHOUSE_PASSWORD: servermind_dev
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+
+  # Temporal - 工作流引擎
+  temporal:
+    image: temporalio/auto-setup:1.21
+    container_name: servermind-temporal
+    ports:
+      - "7233:7233"
+    environment:
+      - DB=postgresql
+      - DB_PORT=5432
+      - POSTGRES_USER=servermind
+      - POSTGRES_PWD=servermind_dev
+      - POSTGRES_SEEDS=postgres
+    depends_on:
+      - postgres
+
+  # ServerMind API Server
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: servermind-api
+    environment:
+      - SERVER_PORT=8080
+      - SERVER_MODE=debug
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=servermind
+      - DB_PASSWORD=servermind_dev
+      - DB_NAME=servermind
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=servermind_dev
+      - MILVUS_HOST=milvus-standalone
+      - MILVUS_PORT=19530
+      - TEMPORAL_HOST_PORT=temporal:7233
+      - JWT_SECRET=servermind_dev_secret_change_in_prod
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - redis
+      - milvus-standalone
+      - temporal
+    volumes:
+      - ./configs:/app/configs
+
+  # ServerMind Worker
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: servermind-worker
+    command: ["./worker"]
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=servermind
+      - DB_PASSWORD=servermind_dev
+      - DB_NAME=servermind
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=servermind_dev
+      - MILVUS_HOST=milvus-standalone
+      - MILVUS_PORT=19530
+      - TEMPORAL_HOST_PORT=temporal:7233
+    depends_on:
+      - postgres
+      - redis
+      - milvus-standalone
+      - temporal
+
+volumes:
+  postgres_data:
+  redis_data:
+  milvus_data:
+  etcd_data:
+  minio_data:
+  neo4j_data:
+  clickhouse_data:
