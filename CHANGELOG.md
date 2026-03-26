@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0.0] - 2026-03-26
+
+### Added - Phase 3: Complete Deployment Infrastructure
+
+#### RAG Knowledge Base
+- New package `internal/knowledge/rag.go`
+  - Milvus vector database integration
+  - Similar case search with embedding
+  - Knowledge document storage and retrieval
+  - KnowledgeCaseManager for success/failure cases
+
+#### Vault SSH Certificate Management
+- New package `internal/vault/ssh.go`
+  - HashiCorp Vault integration
+  - Dynamic SSH certificate generation
+  - SSH role management
+  - Certificate signing and storage
+
+#### WebSocket Real-time Streaming
+- New package `internal/websocket/hub.go`
+  - WebSocket Hub for connection management
+  - Deployment progress broadcasting
+  - Error and success message streaming
+  - Gin integration
+
+#### Asciinema SSH Recording
+- New package `internal/asciinema/recorder.go`
+  - SSH session recording (.cast format)
+  - MinIO storage integration
+  - Cast file parsing
+  - Recording lifecycle management
+
+#### API Handlers
+- New package `internal/handler/handlers.go`
+  - DeploymentHandler (create, get, cancel, retry)
+  - ServerHandler (CRUD, test connection)
+  - KnowledgeHandler (search, list cases)
+  - WebSocket integration
+
+#### Deployment Script
+- New script `scripts/deploy.sh`
+  - One-command deployment (dev/prod)
+  - Infrastructure health checks
+  - Database migrations
+  - Service status
+
 ## [0.2.0.0] - 2026-03-26
 
 ### Added - Phase 1 Core Infrastructure
