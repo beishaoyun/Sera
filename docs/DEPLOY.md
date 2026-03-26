@@ -1,249 +1,340 @@
-# ServerMind 部署指南
+# Sera Platform - Deployment Guide
 
-## 快速部署（推荐 Docker）
+## Quick Start
 
-### 方式一：使用 Docker（需要安装 Docker）
+### Prerequisites
+
+- Docker & Docker Compose
+- Go 1.21+
+- Node.js 20+ (for frontend)
+- asciinema (optional, for SSH recording)
+
+### One-Command Deployment
 
 ```bash
-# 1. 启动所有服务
-cd /root/aixm
-docker compose up -d
+# Development environment
+./scripts/deploy.sh dev
 
-# 2. 查看日志
-docker compose logs -f api
+# Production environment
+./scripts/deploy.sh prod
 
-# 3. 访问 API
-# http://localhost:8080
+# Stop all services
+./scripts/deploy.sh stop
+
+# Check status
+./scripts/deploy.sh status
 ```
 
-### 方式二：手动部署（需要安装 Go 1.21+）
+## Manual Deployment
 
-#### 1. 安装 Go
+### Step 1: Start Infrastructure Services
 
 ```bash
-# 下载并安装 Go 1.21
-wget https://go.dev/dl/go1.21.6.linux-amd64.tar.gz
-sudo tar -C /usr/local -xzf go1.21.6.linux-amd64.tar.gz
-export PATH=$PATH:/usr/local/go/bin
-echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
-source ~/.bashrc
-
-# 验证安装
-go version
+docker compose up -d postgres redis milvus-standalone neo4j clickhouse temporal nats vault etcd minio
 ```
 
-#### 2. 安装依赖
+Wait for all services to be healthy (about 2-3 minutes).
+
+### Step 2: Run Database Migrations
 
 ```bash
-cd /root/aixm
-go mod download
-```
-
-#### 3. 启动基础服务
-
-```bash
-docker compose up -d postgres redis
-```
-
-#### 4. 运行数据库迁移
-
-```bash
-export DB_HOST=localhost
-export DB_PORT=5432
-export DB_USER=servermind
-export DB_PASSWORD=servermind_dev
-export DB_NAME=servermind
-
 go run cmd/migrator/main.go
 ```
 
-#### 5. 启动 API 服务器
+### Step 3: Configure Environment
 
 ```bash
-export JWT_SECRET=your-secret-key-change-in-prod
-export LLM_API_KEY=your-openai-api-key  # 可选，使用 LLM 功能
-
-go run cmd/server/main.go
+cp .env.example .env
+# Edit .env and set your API keys
 ```
 
-#### 6. 启动 Worker（可选）
+### Step 4: Start API Server
 
 ```bash
+# Development mode (with hot reload)
+go run cmd/server/main.go
+
+# Or build and run
+go build -o bin/api ./cmd/server
+./bin/api
+```
+
+### Step 5: Start Worker
+
+```bash
+# In a separate terminal
 go run cmd/worker/main.go
 ```
 
-## 前端部署
+### Step 6: Build and Start Frontend
 
 ```bash
-cd /root/aixm/frontend
-
-# 安装 Node.js 18+ (如未安装)
-# curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-# sudo apt-get install -y nodejs
-
-# 安装依赖
+cd frontend
 npm install
-
-# 开发模式
 npm run dev
-
-# 生产构建
-npm run build
-npm start
 ```
 
-## 配置说明
+## Service Endpoints
 
-### 环境变量
+| Service | URL | Credentials |
+|---------|-----|-------------|
+| API Server | http://localhost:8080 | - |
+| Frontend | http://localhost:3000 | - |
+| PostgreSQL | localhost:5432 | servermind / servermind_dev |
+| Redis | localhost:6379 | password: servermind_dev |
+| Milvus | localhost:19530 | root / Milvus |
+| Neo4j | localhost:7474 | neo4j / servermind_dev |
+| ClickHouse | localhost:8123 | servermind / servermind_dev |
+| Temporal UI | localhost:8233 | - |
+| NATS | localhost:4222 | - |
+| Vault | localhost:8200 | token: servermind_dev_token |
+| MinIO Console | localhost:9001 | minioadmin / minioadmin |
 
-| 变量名 | 说明 | 默认值 |
-|--------|------|--------|
-| SERVER_PORT | API 端口 | 8080 |
-| SERVER_MODE | 运行模式 (debug/release) | debug |
-| DB_HOST | PostgreSQL 主机 | localhost |
-| DB_PORT | PostgreSQL 端口 | 5432 |
-| DB_USER | 数据库用户 | servermind |
-| DB_PASSWORD | 数据库密码 | servermind_dev |
-| DB_NAME | 数据库名 | servermind |
-| REDIS_HOST | Redis 主机 | localhost |
-| REDIS_PORT | Redis 端口 | 6379 |
-| JWT_SECRET | JWT 密钥 | - |
-| LLM_API_KEY | OpenAI API 密钥 | - |
-| LLM_PROVIDER | LLM 提供商 (openai/claude) | openai |
-| LLM_MODEL | LLM 模型 | gpt-4-turbo-preview |
+## API Endpoints
 
-### .env 配置示例
+### Authentication
 
 ```bash
-# 复制示例配置
-cp .env.example .env
+# Register
+POST /api/v1/auth/register
+{
+  "email": "user@example.com",
+  "password": "securepassword",
+  "name": "User Name"
+}
 
-# 编辑配置
-vim .env
+# Login
+POST /api/v1/auth/login
+{
+  "email": "user@example.com",
+  "password": "securepassword"
+}
+
+# Refresh Token
+POST /api/v1/auth/refresh
+{
+  "refresh_token": "your-refresh-token"
+}
 ```
 
-## API 测试
-
-### 注册
+### Servers
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "test@example.com",
-    "password": "password123",
-    "name": "Test User"
-  }'
+# Create Server
+POST /api/v1/servers
+Authorization: Bearer <token>
+{
+  "name": "Production Server",
+  "host": "192.168.1.100",
+  "port": 22,
+  "username": "root",
+  "password": "server-password"  # Or use ssh_key
+}
+
+# List Servers
+GET /api/v1/servers
+Authorization: Bearer <token>
+
+# Get Server
+GET /api/v1/servers/:id
+Authorization: Bearer <token>
+
+# Test Connection
+POST /api/v1/servers/:id/test
+Authorization: Bearer <token>
 ```
 
-### 登录
+### Deployments
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "test@example.com",
-    "password": "password123"
-  }'
+# Create Deployment
+POST /api/v1/deployments
+Authorization: Bearer <token>
+{
+  "repo_url": "https://github.com/user/repo",
+  "server_id": "uuid-here",
+  "branch": "main"
+}
+
+# Get Deployment Status
+GET /api/v1/deployments/:id
+Authorization: Bearer <token>
+
+# Get Deployment Progress
+GET /api/v1/deployments/:id/progress
+Authorization: Bearer <token>
+
+# Cancel Deployment
+POST /api/v1/deployments/:id/cancel
+Authorization: Bearer <token>
 ```
 
-### 创建部署（GitHub 项目）
+### WebSocket
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/deployments \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -d '{
-    "server_id": "xxx",
-    "repo_url": "https://github.com/vercel/next.js"
-  }'
+# Connect to deployment progress
+ws://localhost:8080/ws/deployments/:id
 ```
 
-### 创建部署（教程 URL）
+## Environment Variables
+
+See `.env.example` for all available options.
+
+Key variables:
+- `LLM_API_KEY`: Your Anthropic/OpenAI API key
+- `GITHUB_TOKEN`: GitHub personal access token (optional, for private repos)
+- `JWT_SECRET`: Change this in production!
+
+## Production Deployment
+
+### Docker Compose (Recommended)
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/deployments \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -d '{
-    "server_id": "xxx",
-    "tutorial_url": "https://juejin.cn/post/xxx"
-  }'
+# Build images
+docker compose build
+
+# Start all services
+docker compose up -d
+
+# View logs
+docker compose logs -f api worker
+
+# Stop all services
+docker compose down
 ```
 
-### 解析内容（不部署）
+### Kubernetes (Coming Soon)
+
+Helm charts and Kubernetes manifests will be available in a future release.
+
+## Troubleshooting
+
+### Database Connection Failed
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/parse-content \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -d '{
-    "repo_url": "https://github.com/vercel/next.js"
-  }'
-```
+# Check if PostgreSQL is running
+docker compose ps postgres
 
-## 故障排查
-
-### 数据库连接失败
-
-```bash
-# 检查容器状态
-docker compose ps
-
-# 查看数据库日志
+# View logs
 docker compose logs postgres
 ```
 
-### API 无法启动
+### Milvus Connection Failed
 
 ```bash
-# 检查端口占用
-lsof -i :8080
-
-# 查看详细日志
-go run cmd/server/main.go 2>&1 | tee server.log
+# Milvus takes longer to start, wait 2-3 minutes
+docker compose logs milvus-standalone
 ```
 
-### LLM API 失败
-
-检查 `.env` 中的 API 密钥配置：
-```bash
-export LLM_API_KEY=sk-xxxxx
-```
-
-## 生产部署
-
-### Kubernetes
+### LLM API Errors
 
 ```bash
-kubectl apply -f configs/k8s/
+# Check your API key
+echo $LLM_API_KEY
+
+# Test connection
+curl -H "Authorization: Bearer $LLM_API_KEY" https://api.anthropic.com/v1/messages
 ```
 
-### Systemd 服务
-
-创建 `/etc/systemd/system/servermind.service`:
-
-```ini
-[Unit]
-Description=ServerMind API
-After=network.target postgresql.service redis.service
-
-[Service]
-Type=simple
-User=servermind
-WorkingDirectory=/root/aixm
-Environment="PATH=/usr/local/go/bin:/usr/bin"
-Environment="DB_HOST=localhost"
-Environment="DB_PASSWORD=servermind_dev"
-ExecStart=/usr/local/go/bin/go run cmd/server/main.go
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
+### WebSocket Connection Failed
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable servermind
-sudo systemctl start servermind
+# Check if API server is running
+curl http://localhost:8080/health
+
+# Check CORS settings in .env
+# CORS_ALLOWED_ORIGINS=http://localhost:3000
 ```
+
+## Backup and Restore
+
+### Backup Database
+
+```bash
+docker compose exec postgres pg_dump -U servermind servermind > backup.sql
+```
+
+### Restore Database
+
+```bash
+docker compose exec -T postgres psql -U servermind servermind < backup.sql
+```
+
+### Backup Milvus
+
+Follow Milvus documentation for backup/restore procedures.
+
+## Monitoring
+
+### Health Checks
+
+```bash
+# API health
+curl http://localhost:8080/health
+
+# Readiness check
+curl http://localhost:8080/ready
+```
+
+### Temporal UI
+
+Open http://localhost:8233 to view workflow executions.
+
+### NATS Monitoring
+
+```bash
+# Server info
+curl http://localhost:8222/varz
+
+# Connection info
+curl http://localhost:8222/connz
+```
+
+## Security Considerations
+
+1. **Change all default passwords** in `.env` before deploying to production
+2. **Use HTTPS** in production (configure in reverse proxy)
+3. **Rotate JWT_SECRET** for each deployment
+4. **Enable Vault** for SSH key management
+5. **Configure firewall** rules for all services
+6. **Enable audit logging** for compliance
+
+## Performance Tuning
+
+### Database
+
+```env
+DB_MAX_OPEN_CONNS=50
+DB_MAX_IDLE_CONNS=25
+```
+
+### Redis
+
+```env
+REDIS_MAX_CONNECTIONS=100
+```
+
+### SSH
+
+```env
+SSH_MAX_CONNECTIONS=200
+SSH_CONNECT_TIMEOUT=15s
+```
+
+## Updates
+
+```bash
+# Pull latest changes
+git pull
+
+# Stop services
+./scripts/deploy.sh stop
+
+# Start fresh
+./scripts/deploy.sh prod
+```
+
+## Support
+
+- GitHub Issues: https://github.com/beishaoyun/Sera/issues
+- Documentation: https://github.com/beishaoyun/Sera/docs/
