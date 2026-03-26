@@ -10,7 +10,9 @@
       "Bash(chmod:*)",
       "Bash(docker-compose up:*)",
       "Bash(docker compose:*)",
-      "Bash(DB_HOST=localhost DB_PORT=5432 DB_USER=servermind DB_PASSWORD=servermind_dev DB_NAME=servermind go run cmd/migrator/main.go 2>&1)"
+      "Bash(DB_HOST=localhost DB_PORT=5432 DB_USER=servermind DB_PASSWORD=servermind_dev DB_NAME=servermind go run cmd/migrator/main.go 2>&1)",
+      "Bash(git restore:*)",
+      "Bash(git add:*)"
     ]
   }
 }

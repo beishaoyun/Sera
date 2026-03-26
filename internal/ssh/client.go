@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/servermind/aixm/internal/sandbox"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 )
@@ -66,13 +67,15 @@ type sshClient struct {
 	mu         sync.RWMutex
 	lastUsed   time.Time
 	closed     bool
+	sandbox    *sandbox.CommandSandbox
 }
 
 // NewSSHClient 创建 SSH 客户端
-func NewSSHClient(config *SSHConfig) SSHClient {
+func NewSSHClient(config *SSHConfig, sb *sandbox.CommandSandbox) SSHClient {
 	return &sshClient{
 		config:   config,
 		lastUsed: time.Now(),
+		sandbox:  sb,
 	}
 }
 
@@ -130,6 +133,19 @@ func (s *sshClient) Execute(ctx context.Context, command string, opts ExecuteOpt
 
 	if client == nil {
 		return nil, fmt.Errorf("SSH client not connected")
+	}
+
+	// 1. 命令安全验证（如果配置了沙箱）
+	if s.sandbox != nil {
+		validationResult := s.sandbox.ValidateOnly(command)
+		if !validationResult.Allowed {
+			logrus.WithFields(logrus.Fields{
+				"command":  command,
+				"severity": validationResult.Severity,
+				"reason":   validationResult.Reason,
+			}).Warn("Command blocked by security sandbox")
+			return nil, fmt.Errorf("command blocked by security sandbox: %s (severity: %s)", validationResult.Reason, validationResult.Severity)
+		}
 	}
 
 	startTime := time.Now()
@@ -306,14 +322,16 @@ type SSHPool struct {
 	mu          sync.RWMutex
 	maxSize     int
 	config      *SSHConfig
+	sandbox     *sandbox.CommandSandbox
 }
 
 // NewSSHPool 创建 SSH 连接池
-func NewSSHPool(maxSize int, config *SSHConfig) *SSHPool {
+func NewSSHPool(maxSize int, config *SSHConfig, sb *sandbox.CommandSandbox) *SSHPool {
 	return &SSHPool{
 		connections: make(map[string]SSHClient),
 		maxSize:     maxSize,
 		config:      config,
+		sandbox:     sb,
 	}
 }
 
@@ -327,7 +345,7 @@ func (p *SSHPool) GetConnection(ctx context.Context, serverID string) (SSHClient
 	}
 
 	// 创建新连接
-	client = NewSSHClient(p.config)
+	client = NewSSHClient(p.config, p.sandbox)
 	if err := client.Connect(ctx); err != nil {
 		return nil, err
 	}

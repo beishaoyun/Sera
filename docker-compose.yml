@@ -114,6 +114,7 @@ services:
     container_name: servermind-temporal
     ports:
       - "7233:7233"
+      - "8233:8233" # Web UI
     environment:
       - DB=postgresql
       - DB_PORT=5432
@@ -122,6 +123,44 @@ services:
       - POSTGRES_SEEDS=postgres
     depends_on:
       - postgres
+
+  # NATS JetStream - 消息总线 (Multi-Agent 通信)
+  nats:
+    image: nats:2.10-alpine
+    container_name: servermind-nats
+    ports:
+      - "4222:4222"   # Client port
+      - "8222:8222"   # HTTP monitoring
+      - "6222:6222"   # Cluster port
+    command:
+      - "--jetstream"
+      - "--mem_size=1gb"
+      - "--store_dir=/data/nats"
+      - "--http_port=8222"
+    volumes:
+      - nats_data:/data/nats
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # HashiCorp Vault - 密钥管理
+  vault:
+    image: vault:1.15
+    container_name: servermind-vault
+    cap_add:
+      - IPC_LOCK
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: servermind_dev_token
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    healthcheck:
+      test: ["CMD", "vault", "status", "-format=json"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   # ServerMind API Server
   api:
@@ -187,3 +226,4 @@ volumes:
   minio_data:
   neo4j_data:
   clickhouse_data:
+  nats_data:
